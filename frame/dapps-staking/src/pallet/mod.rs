@@ -283,12 +283,12 @@ pub mod pallet {
             }
 
             let force_new_era = Self::force_era().eq(&Forcing::ForceNew);
-            let blocks_per_era = T::BlockPerEra::get();
             let previous_era = Self::current_era();
             let next_era_starting_block = Self::next_era_starting_block();
 
             // Value is compared to 1 since genesis block is ignored
             if now == next_era_starting_block || force_new_era || previous_era.is_zero() {
+                let blocks_per_era = T::BlockPerEra::get();
                 let next_era = previous_era + 1;
                 CurrentEra::<T>::put(next_era);
 
@@ -302,9 +302,11 @@ pub mod pallet {
                 }
 
                 Self::deposit_event(Event::<T>::NewDappStakingEra(next_era));
+                return T::WeightInfo::on_initialize_new_era();
+                
             }
 
-            T::DbWeight::get().writes(5)
+            return T::WeightInfo::on_initialize_not_new_era();
         }
     }
 
