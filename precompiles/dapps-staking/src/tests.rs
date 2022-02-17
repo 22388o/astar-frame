@@ -9,7 +9,6 @@ use frame_support::{assert_ok, dispatch::Dispatchable};
 use pallet_evm::{ExitSucceed, PrecompileSet};
 use sha3::{Digest, Keccak256};
 use sp_runtime::Perbill;
-use std::collections::BTreeMap;
 
 use crate::utils;
 use codec::Decode;
@@ -337,13 +336,9 @@ fn bond_and_stake_is_ok() {
             let amount_staked_dino = 50 * AST;
             bond_stake_and_verify(TestAccount::Dino, TEST_CONTRACT, amount_staked_dino);
 
-            let mut stakers_map = BTreeMap::new();
-            stakers_map.insert(TestAccount::Bobo.into(), amount_staked_bobo);
-            stakers_map.insert(TestAccount::Dino.into(), amount_staked_dino);
-
-            let era = 1;
             contract_era_stake_verify(TEST_CONTRACT, amount_staked_bobo + amount_staked_dino);
-            contract_era_stakers_verify(TEST_CONTRACT, era, stakers_map);
+            verify_staked_amount(TEST_CONTRACT, TestAccount::Bobo.into(), amount_staked_bobo);
+            verify_staked_amount(TEST_CONTRACT, TestAccount::Dino.into(), amount_staked_dino);
         });
 }
 
@@ -373,11 +368,9 @@ fn unbond_and_unstake_is_ok() {
             advance_to_era(era);
             unbond_unstake_and_verify(TestAccount::Bobo, TEST_CONTRACT, amount_staked_bobo);
 
-            let mut stakers_map = BTreeMap::new();
-            stakers_map.insert(TestAccount::Dino.into(), amount_staked_dino);
-            // staking_info_verify(contract_array, amount_staked_dino, era, stakers_map);
             contract_era_stake_verify(TEST_CONTRACT, amount_staked_dino);
-            contract_era_stakers_verify(TEST_CONTRACT, era, stakers_map);
+
+            verify_staked_amount(TEST_CONTRACT, TestAccount::Dino.into(), amount_staked_dino);
 
             // withdraw unbonded funds
             advance_to_era(era + UNBONDING_PERIOD + 1);
@@ -418,30 +411,13 @@ fn claim_is_ok() {
             //check that the reward is payed out to the stakers and the developer
             let developer_reward = Perbill::from_percent(DEVELOPER_REWARD_PERCENTAGE)
                 * BLOCK_REWARD
-                * BLOCKS_PER_ERA as u128
-                - REGISTER_DEPOSIT;
-            let stakers_reward = Perbill::from_percent(100 - DEVELOPER_REWARD_PERCENTAGE)
-                * BLOCK_REWARD
                 * BLOCKS_PER_ERA as u128;
-            let bobo_reward = ratio_bobo * stakers_reward;
-            let dino_reward = ratio_dino * stakers_reward;
+
             assert_eq!(
                 <TestRuntime as pallet_evm::Config>::Currency::free_balance(
                     &TestAccount::Alex.into()
                 ),
-                (200 * AST) + developer_reward
-            );
-            assert_eq!(
-                <TestRuntime as pallet_evm::Config>::Currency::free_balance(
-                    &TestAccount::Bobo.into()
-                ),
-                (200 * AST) + bobo_reward
-            );
-            assert_eq!(
-                <TestRuntime as pallet_evm::Config>::Currency::free_balance(
-                    &TestAccount::Dino.into()
-                ),
-                (200 * AST) + dino_reward
+                (200 * AST) + developer_reward - REGISTER_DEPOSIT
             );
         });
 }
@@ -650,17 +626,12 @@ fn contract_era_stake_verify(contract_array: [u8; 20], amount: u128) {
     );
 }
 
-/// helper function to check if (un)bonding was successful
-fn contract_era_stakers_verify(
-    contract_array: [u8; 20],
-    era: EraIndex,
-    expected_stakers_map: BTreeMap<AccountId, u128>,
-) {
+/// helper function to verify latest staked amount
+fn verify_staked_amount(contract_array: [u8; 20], staker: AccountId, amount: Balance) {
     // check the storage
     let smart_contract = decode_smart_contract_from_array(contract_array).unwrap();
-    let staking_info = DappsStaking::contract_era_stake(&smart_contract, era).unwrap_or_default();
-    let stakers = staking_info.stakers;
-    assert_eq!(expected_stakers_map, stakers);
+    let staker_info = DappsStaking::staker_info(staker, &smart_contract);
+    assert_eq!(staker_info.latest_staked_value(), amount);
 }
 
 /// Helper method to decode type SmartContract enum from [u8; 20]

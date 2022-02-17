@@ -62,7 +62,7 @@ where
     fn read_era_reward(input: EvmInArg) -> Result<PrecompileOutput, PrecompileFailure> {
         input.expecting_arguments(1).map_err(|e| exit_error(e))?;
         let era = input.to_u256(1).low_u32();
-        let read_reward = pallet_dapps_staking::EraRewardsAndStakes::<R>::get(era);
+        let read_reward = pallet_dapps_staking::GeneralEraInfo::<R>::get(era);
         let reward = read_reward.map_or(Zero::zero(), |r| r.rewards);
         let gas_used = R::GasWeightMapping::weight_to_gas(R::DbWeight::get().read);
 
@@ -80,7 +80,7 @@ where
     fn read_era_staked(input: EvmInArg) -> Result<PrecompileOutput, PrecompileFailure> {
         input.expecting_arguments(1).map_err(|e| exit_error(e))?;
         let era = input.to_u256(1).low_u32();
-        let reward_and_stake = pallet_dapps_staking::EraRewardsAndStakes::<R>::get(era);
+        let reward_and_stake = pallet_dapps_staking::GeneralEraInfo::<R>::get(era);
         let staked = reward_and_stake.map_or(Zero::zero(), |r| r.staked);
         let gas_used = R::GasWeightMapping::weight_to_gas(R::DbWeight::get().read);
 
@@ -198,7 +198,7 @@ where
         // parse era
         let era = input.to_u256(2).low_u128().saturated_into();
 
-        Ok(pallet_dapps_staking::Call::<R>::claim { contract_id, era }.into())
+        Ok(pallet_dapps_staking::Call::<R>::claim_dapp { contract_id, era }.into())
     }
 
     /// Helper method to decode type SmartContract enum

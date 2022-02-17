@@ -16,8 +16,11 @@ sp-std = { git = "https://github.com/paritytech/substrate", branch = "polkadot-v
 sp-core = { git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.16", default-features = false }
 frame-support = { git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.16", default-features = false }
 frame-system = { git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.16", default-features = false }
-pallet-dapps-staking = { git = "https://github.com/AstarNetwork/astar-frame", branch = "polkadot-v0.9.16", default-features = false }
 sp-runtime = { git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.16",  default-features = false }
+
+# Astar frame
+# TODO change this later
+pallet-dapps-staking = { git = "https://github.com/AstarNetwork/astar-frame", branch = "feature/individual-claim", default-features = false }
 
 # Frontier
 pallet-evm = { git = "https://github.com/AstarNetwork/frontier", branch = "polkadot-v0.9.16", default-features = false }
