@@ -324,7 +324,7 @@ impl<Balance: AtLeast32BitUnsigned + Copy> StakerInfo<Balance> {
 
     /// Latest staked value.
     /// E.g. if staker is fully unstaked, this will return `Zero`.
-    /// Othwerise returns a non-zero balance.
+    /// Otherwise returns a non-zero balance.
     pub fn latest_staked_value(&self) -> Balance {
         self.stakes.last().map_or(Zero::zero(), |x| x.staked)
     }
@@ -470,9 +470,9 @@ where
 /// automatically restake anything they earn.
 #[derive(Encode, Decode, Clone, Copy, PartialEq, Eq, RuntimeDebug, TypeInfo)]
 pub enum RewardHandling {
-    /// Rewards are transfered to stakers balance without any further action.
+    /// Rewards are transferred to stakers balance without any further action.
     OnlyPayout,
-    /// Rewards are transfered to stakers balance and are immediately re-staked
+    /// Rewards are transferred to stakers balance and are immediately re-staked
     /// on the contract from which the reward was received.
     PayoutAndStake,
 }
