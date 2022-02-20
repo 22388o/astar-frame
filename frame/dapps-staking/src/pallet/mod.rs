@@ -550,7 +550,7 @@ pub mod pallet {
 
             // Increment ledger and total staker value for contract. Overflow shouldn't be possible but the check is here just for safety.
             ensure!(
-                Self::stake(value_to_stake, &mut staker_info).is_ok(),
+                Self::stake(value_to_stake, &mut staker_info, current_era).is_ok(),
                 Error::<T>::UnexpectedStakeInfoEra
             );
             ensure!(
@@ -558,8 +558,13 @@ pub mod pallet {
                 ArithmeticError::Overflow
             );
             ensure!(
-                Self::update_contract_era_stake(&mut staking_info, &contract_id, value_to_stake)
-                    .is_ok(),
+                Self::update_contract_era_stake(
+                    &mut staking_info,
+                    &contract_id,
+                    value_to_stake,
+                    current_era
+                )
+                .is_ok(),
                 ArithmeticError::Overflow
             );
             Self::update_staker_info(&staker, &contract_id, staker_info.clone());
@@ -752,7 +757,7 @@ pub mod pallet {
                 staker_info.latest_staked_value().is_zero(),
             ) {
                 ensure!(
-                    Self::stake(staker_reward, &mut staker_info).is_ok(),
+                    Self::stake(staker_reward, &mut staker_info, current_era).is_ok(),
                     Error::<T>::UnexpectedStakeInfoEra
                 );
                 ensure!(
@@ -760,8 +765,13 @@ pub mod pallet {
                     ArithmeticError::Overflow
                 );
                 ensure!(
-                    Self::update_contract_era_stake(&mut staking_info, &contract_id, staker_reward)
-                        .is_ok(),
+                    Self::update_contract_era_stake(
+                        &mut staking_info,
+                        &contract_id,
+                        staker_reward,
+                        current_era
+                    )
+                    .is_ok(),
                     ArithmeticError::Overflow
                 );
                 Self::deposit_event(Event::<T>::RewardRestaked(
@@ -923,8 +933,8 @@ pub mod pallet {
         fn stake(
             value_to_stake: BalanceOf<T>,
             staker_info: &mut StakerInfo<BalanceOf<T>>,
+            current_era: u32,
         ) -> DispatchResultWithPostInfo {
-            let current_era = Self::current_era();
             staker_info
                 .stake(current_era, value_to_stake)
                 .map_err(|_| Error::<T>::UnexpectedStakeInfoEra)?;
@@ -959,8 +969,8 @@ pub mod pallet {
             staking_info: &mut EraStakingPoints<BalanceOf<T>>,
             contract_id: &T::SmartContract,
             value_to_stake: BalanceOf<T>,
+            current_era: u32,
         ) -> DispatchResultWithPostInfo {
-            let current_era = Self::current_era();
             staking_info.total = staking_info
                 .total
                 .checked_add(&value_to_stake)
