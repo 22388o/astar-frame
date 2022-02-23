@@ -310,17 +310,9 @@ pub mod pallet {
             origin: OriginFor<T>,
             contract_id: T::SmartContract,
         ) -> DispatchResultWithPostInfo {
-            let developer = ensure_signed(origin)?;
+            ensure_root(origin)?;
 
-            let registered_contract =
-                RegisteredDevelopers::<T>::get(&developer).ok_or(Error::<T>::NotOwnedContract)?;
-
-            // This is a sanity check for the unregistration since it requires the caller
-            // to input the correct contract address.
-            ensure!(
-                registered_contract == contract_id,
-                Error::<T>::NotOwnedContract,
-            );
+            let developer = RegisteredDapps::<T>::get(&contract_id).ok_or(Error::<T>::NotOperatedContract)?;
 
             // We need to unstake all funds that are currently staked
             let current_era = Self::current_era();
