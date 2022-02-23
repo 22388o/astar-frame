@@ -252,6 +252,8 @@ pub mod pallet {
         Reward(T::AccountId, T::SmartContract, EraIndex, BalanceOf<T>),
         /// Claimed staker reward restaked
         RewardAndRestake(T::AccountId, T::SmartContract, BalanceOf<T>),
+        /// Reward handling modified
+        RewardHandlingChange(T::AccountId, RewardHandling),
     }
 
     #[pallet::error]
@@ -894,6 +896,8 @@ pub mod pallet {
             Ledger::<T>::mutate(&staker, |ledger| {
                 ledger.reward_handling = option;
             });
+
+            Self::deposit_event(Event::<T>::RewardHandlingChange(staker, option));
             Ok(().into())
         }
     }
