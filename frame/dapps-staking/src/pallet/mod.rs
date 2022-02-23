@@ -323,7 +323,8 @@ pub mod pallet {
             // we keep this one working regardless whether pallet is enabled or not so we can unregister contracts
             ensure_root(origin)?;
 
-            let developer = RegisteredDapps::<T>::get(&contract_id).ok_or(Error::<T>::NotOperatedContract)?;
+            let developer =
+                RegisteredDapps::<T>::get(&contract_id).ok_or(Error::<T>::NotOperatedContract)?;
 
             // We need to unstake all funds that are currently staked
             let current_era = Self::current_era();
@@ -670,10 +671,7 @@ pub mod pallet {
 
         /// Enable or disable pallet
         #[pallet::weight(T::DbWeight::get().writes(1))]
-        pub fn maintenance_mode(
-            origin: OriginFor<T>,
-            enabled: bool,
-        ) -> DispatchResultWithPostInfo {
+        pub fn maintenance_mode(origin: OriginFor<T>, enabled: bool) -> DispatchResultWithPostInfo {
             ensure_root(origin)?;
             if enabled {
                 PalletDisabled::<T>::kill();
@@ -694,7 +692,7 @@ pub mod pallet {
                 Ok(())
             }
         }
-        
+
         /// Get AccountId assigned to the pallet.
         fn account_id() -> T::AccountId {
             T::PalletId::get().into_account()

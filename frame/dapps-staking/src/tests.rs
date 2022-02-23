@@ -1398,10 +1398,7 @@ fn claim_after_unregister_is_ok() {
         advance_to_era(5);
 
         // Unregister contract, without claiming it!
-        assert_ok!(DappsStaking::unregister(
-            Origin::root(),
-            contract.clone()
-        ));
+        assert_ok!(DappsStaking::unregister(Origin::root(), contract.clone()));
         let unregistered_era = DappsStaking::current_era();
 
         // Ensure that contract can still be claimed.
