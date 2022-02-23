@@ -230,6 +230,15 @@ benchmarks! {
     force_new_era {
     }: _(RawOrigin::Root)
 
+    enable_compound_staking {
+        initialize::<T>();
+        let staker = whitelisted_caller();
+        let option = RewardHandling::OnlyPayout;
+    }: _(RawOrigin::Signed(staker.clone()), option)
+    verify {
+        assert_last_event::<T>(Event::<T>::RewardHandlingChange(staker, option).into());
+    }
+
 }
 
 impl_benchmark_test_suite!(
