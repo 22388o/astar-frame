@@ -251,7 +251,7 @@ pub mod pallet {
         /// Reward paid to staker or developer.
         Reward(T::AccountId, T::SmartContract, EraIndex, BalanceOf<T>),
         /// Claimed staker reward restaked
-        RewardRestaked(T::AccountId, T::SmartContract, BalanceOf<T>),
+        RewardAndRestake(T::AccountId, T::SmartContract, BalanceOf<T>),
     }
 
     #[pallet::error]
@@ -302,10 +302,6 @@ pub mod pallet {
         RequiredContractPreApproval,
         /// Developer's account is already part of pre-approved list
         AlreadyPreApprovedDeveloper,
-        /// No ledger info for account
-        NothingStakedForAccount,
-        /// Reward handling already set to the requested value
-        RestakingAlreadySet,
     }
 
     #[pallet::hooks]
@@ -758,7 +754,7 @@ pub mod pallet {
 
                 ContractEraStake::<T>::insert(contract_id.clone(), current_era, staking_info);
 
-                Self::deposit_event(Event::<T>::RewardRestaked(
+                Self::deposit_event(Event::<T>::RewardAndRestake(
                     staker.clone(),
                     contract_id.clone(),
                     staker_reward,
