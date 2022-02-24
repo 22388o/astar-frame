@@ -400,11 +400,8 @@ pub(crate) fn assert_claim_staker(claimer: AccountId, contract_id: &MockSmartCon
     let init_state = MemorySnapshot::all(claim_era, contract_id, claimer);
 
     // Calculate contract portion of the reward
-    let (_, stakers_joint_reward) = DappsStaking::dev_stakers_split(
-        &init_state.contract_info,
-        &init_state.era_info,
-        &<TestRuntime as Config>::DeveloperRewardPercentage::get(),
-    );
+    let (_, stakers_joint_reward) =
+        DappsStaking::dev_stakers_split(&init_state.contract_info, &init_state.era_info);
 
     let (claim_era, staked) = init_state.staker_info.clone().claim();
     assert!(claim_era > 0); // Sanity check - if this fails, method is being used incorrectly
@@ -464,11 +461,8 @@ pub(crate) fn assert_claim_dapp(contract_id: &MockSmartContract<AccountId>, clai
     }
 
     // Calculate contract portion of the reward
-    let (calculated_reward, _) = DappsStaking::dev_stakers_split(
-        &init_state.contract_info,
-        &init_state.era_info,
-        &<TestRuntime as Config>::DeveloperRewardPercentage::get(),
-    );
+    let (calculated_reward, _) =
+        DappsStaking::dev_stakers_split(&init_state.contract_info, &init_state.era_info);
 
     assert_ok!(DappsStaking::claim_dapp(
         Origin::signed(developer),

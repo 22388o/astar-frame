@@ -32,17 +32,31 @@ fn on_initialize_when_dapp_staking_enabled_in_mid_of_an_era_is_ok() {
 fn on_unbalanced_is_ok() {
     ExternalityBuilder::build().execute_with(|| {
         // At the beginning, both should be 0
-        assert!(BlockRewardAccumulator::<TestRuntime>::get().is_zero());
+        assert_eq!(
+            BlockRewardAccumulator::<TestRuntime>::get(),
+            Default::default()
+        );
         assert!(free_balance_of_dapps_staking_account().is_zero());
 
         // After handling imbalance, accumulator and account should be updated
         DappsStaking::on_unbalanced(Balances::issue(BLOCK_REWARD));
-        assert_eq!(BLOCK_REWARD, BlockRewardAccumulator::<TestRuntime>::get());
+        let block_reward = BlockRewardAccumulator::<TestRuntime>::get();
+        assert_eq!(BLOCK_REWARD, block_reward.stakers + block_reward.dapps);
+
+        let expected_dapps_reward =
+            <TestRuntime as Config>::DeveloperRewardPercentage::get() * BLOCK_REWARD;
+        let expected_stakers_reward = BLOCK_REWARD - expected_dapps_reward;
+        assert_eq!(block_reward.stakers, expected_stakers_reward);
+        assert_eq!(block_reward.dapps, expected_dapps_reward);
+
         assert_eq!(BLOCK_REWARD, free_balance_of_dapps_staking_account());
 
         // After triggering a new era, accumulator should be set to 0 but account shouldn't consume any new imbalance
         DappsStaking::on_initialize(System::block_number());
-        assert!(BlockRewardAccumulator::<TestRuntime>::get().is_zero());
+        assert_eq!(
+            BlockRewardAccumulator::<TestRuntime>::get(),
+            Default::default()
+        );
         assert_eq!(BLOCK_REWARD, free_balance_of_dapps_staking_account());
     })
 }
@@ -64,13 +78,16 @@ fn on_initialize_is_ok() {
         // Check that all reward&stakes are as expected
         let current_era = DappsStaking::current_era();
         for era in 1..current_era {
-            let era_rewards_and_stakes = GeneralEraInfo::<TestRuntime>::get(era).unwrap();
-            assert_eq!(get_total_reward_per_era(), era_rewards_and_stakes.rewards);
+            let reward_info = GeneralEraInfo::<TestRuntime>::get(era).unwrap().rewards;
+            assert_eq!(
+                get_total_reward_per_era(),
+                reward_info.stakers + reward_info.dapps
+            );
         }
         // Current era rewards should be 0
         let era_rewards = GeneralEraInfo::<TestRuntime>::get(current_era).unwrap();
         assert_eq!(0, era_rewards.staked);
-        assert_eq!(0, era_rewards.rewards);
+        assert_eq!(era_rewards.rewards, Default::default());
     })
 }
 
@@ -82,7 +99,7 @@ fn new_era_is_ok() {
         let starting_era = DappsStaking::current_era();
 
         // verify that block reward is zero at the beginning of an era
-        assert!(DappsStaking::block_reward_accumulator().is_zero());
+        assert_eq!(DappsStaking::block_reward_accumulator(), Default::default());
 
         // Increment block by setting it to the first block in era value
         run_for_blocks(1);
@@ -91,7 +108,7 @@ fn new_era_is_ok() {
 
         // verify that block reward is added to the block_reward_accumulator
         let block_reward = DappsStaking::block_reward_accumulator();
-        assert_eq!(BLOCK_REWARD, block_reward);
+        assert_eq!(BLOCK_REWARD, block_reward.stakers + block_reward.dapps);
 
         // register and bond to verify storage item
         let staker = 2;
@@ -113,13 +130,22 @@ fn new_era_is_ok() {
 
         // verify that block reward accumulator is reset to 0
         let block_reward = DappsStaking::block_reward_accumulator();
-        assert!(block_reward.is_zero());
+        assert_eq!(block_reward, Default::default());
 
         let expected_era_reward = get_total_reward_per_era();
+        let expected_dapps_reward =
+            <TestRuntime as Config>::DeveloperRewardPercentage::get() * expected_era_reward;
+        let expected_stakers_reward = expected_era_reward - expected_dapps_reward;
+
         // verify that .staked is copied and .reward is added
         let era_rewards = GeneralEraInfo::<TestRuntime>::get(starting_era).unwrap();
         assert_eq!(staked_amount, era_rewards.staked);
-        assert_eq!(expected_era_reward, era_rewards.rewards);
+        assert_eq!(
+            expected_era_reward,
+            era_rewards.rewards.dapps + era_rewards.rewards.stakers
+        );
+        assert_eq!(expected_dapps_reward, era_rewards.rewards.dapps);
+        assert_eq!(expected_stakers_reward, era_rewards.rewards.stakers);
     })
 }
 
@@ -1331,7 +1357,8 @@ fn claim_dapp_with_zero_stake_periods_is_ok() {
 
 #[test]
 fn dev_stakers_split_util() {
-    let reward = 7 * 11 * 13 * 17;
+    let base_stakers_reward = 7 * 11 * 13 * 17;
+    let base_dapps_reward = 19 * 23 * 31;
     let staked_on_contract = 123456;
     let total_staked = staked_on_contract * 3;
 
@@ -1342,23 +1369,24 @@ fn dev_stakers_split_util() {
         contract_reward_claimed: false,
     };
     let era_info = EraInfo::<Balance> {
-        rewards: reward,
+        rewards: RewardInfo {
+            dapps: base_dapps_reward,
+            stakers: base_stakers_reward,
+        },
         staked: total_staked,
         locked: total_staked,
     };
 
-    // Try with a fairly balanced split
-    let dev_reward_percentage = Perbill::from_percent(65);
-    let (dev_reward, stakers_reward) =
-        DappsStaking::dev_stakers_split(&staking_points, &era_info, &dev_reward_percentage);
+    let (dev_reward, stakers_reward) = DappsStaking::dev_stakers_split(&staking_points, &era_info);
 
     let contract_stake_ratio = Perbill::from_rational(staked_on_contract, total_staked);
-    let calculated_contract_reward = contract_stake_ratio * reward;
-    let calculated_dev_reward = dev_reward_percentage * calculated_contract_reward;
+    let calculated_stakers_reward = contract_stake_ratio * base_stakers_reward;
+    let calculated_dev_reward = contract_stake_ratio * base_dapps_reward;
     assert_eq!(calculated_dev_reward, dev_reward);
-
-    let calculated_stakers_reward = calculated_contract_reward - calculated_dev_reward;
     assert_eq!(calculated_stakers_reward, stakers_reward);
 
-    assert_eq!(calculated_contract_reward, dev_reward + stakers_reward);
+    assert_eq!(
+        calculated_stakers_reward + calculated_dev_reward,
+        dev_reward + stakers_reward
+    );
 }

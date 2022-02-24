@@ -565,18 +565,23 @@ pub mod v3 {
                 let key_as_vec = EraRewardsAndStakes::<T>::storage_map_final_key(key);
 
                 // Read value from old storage
-                let value = EraRewardsAndStakes::<T>::get(&key).unwrap();
+                let reward_and_stake = EraRewardsAndStakes::<T>::get(&key).unwrap();
+                let dapps_reward = T::DeveloperRewardPercentage::get() * reward_and_stake.rewards;
+
                 GeneralEraInfo::<T>::insert(
                     key,
                     EraInfo::<BalanceOf<T>> {
-                        rewards: value.rewards,
-                        staked: value.staked,
+                        rewards: RewardInfo::<BalanceOf<T>> {
+                            stakers: reward_and_stake.rewards - dapps_reward,
+                            dapps: dapps_reward,
+                        },
+                        staked: reward_and_stake.staked,
                         // This is obviously incorrect. However, it is very close to the actual truth.
                         // What is important is ensuring that LATEST era has the correct information.
                         // The solution should be to sum up all ubonding chunks while iterating over ledger
                         // and set this to 'value.staked - total_unbonding'
                         // Probably should be done AFTER migration has been finalized, then we just update the latest value.
-                        locked: value.staked,
+                        locked: reward_and_stake.staked,
                     },
                 );
 
@@ -612,6 +617,8 @@ pub mod v3 {
                 .saturating_add(T::DbWeight::get().writes(1) + T::DbWeight::get().reads(3));
 
             // This map should be cleared
+            // TODO: this is potentially heavy OP so maybe do it in steps!
+            // Each deletion counts as `write`
             EraRewardsAndStakes::<T>::remove_all(None);
 
             log::info!(">>> GeneralEraInfo migration finished.");
