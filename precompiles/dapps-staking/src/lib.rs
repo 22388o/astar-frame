@@ -3,21 +3,25 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use codec::{Decode, Encode};
-use fp_evm::{Context, ExitError, ExitSucceed, PrecompileFailure, PrecompileOutput};
+use fp_evm::{Context, ExitSucceed, PrecompileFailure, PrecompileOutput};
 
 use frame_support::{
     dispatch::{Dispatchable, GetDispatchInfo, PostDispatchInfo},
-    traits::Get,
+    traits::{Currency, Get},
 };
-use pallet_evm::{AddressMapping, GasWeightMapping, Precompile};
+use pallet_evm::{AddressMapping, Precompile};
 use sp_core::H160;
-use sp_runtime::traits::{SaturatedConversion, Zero};
+use sp_runtime::traits::{Zero};
 use sp_std::{convert::TryInto, marker::PhantomData, vec::Vec};
 use precompile_utils::{ Address,
-    Bytes, EvmDataReader, EvmDataWriter, EvmResult, FunctionModifier, Gasometer,
+    EvmData, EvmDataReader, EvmDataWriter, EvmResult, FunctionModifier, Gasometer,
     RuntimeHelper,
 };
 extern crate alloc;
+
+type BalanceOf<Runtime> = <<Runtime as pallet_dapps_staking::Config>::Currency as Currency<
+	<Runtime as frame_system::Config>::AccountId,
+>>::Balance;
 
 mod utils;
 pub use utils::*;
@@ -38,6 +42,7 @@ pub struct DappsStakingWrapper<R>(PhantomData<R>);
 impl<R> DappsStakingWrapper<R>
 where
 R: pallet_evm::Config + pallet_dapps_staking::Config,
+    BalanceOf<R>: EvmData,
     <R::Call as Dispatchable>::Origin: From<Option<R::AccountId>>,
     R::Call: From<pallet_dapps_staking::Call<R>>,
 {
@@ -60,10 +65,8 @@ R: pallet_evm::Config + pallet_dapps_staking::Config,
     fn read_unbonding_period(gasometer: &mut Gasometer) -> EvmResult<PrecompileOutput> {
         gasometer.record_cost(RuntimeHelper::<R>::db_read_gas_cost())?;
         let unbonding_period = R::UnbondingPeriod::get();
-        let gas_used = R::GasWeightMapping::weight_to_gas(R::DbWeight::get().read);
 
         let output = EvmDataWriter::new().write(unbonding_period).build();
-        println!("unbonding_period output: {:?}", output);
 
         Ok(PrecompileOutput {
             exit_status: ExitSucceed::Returned,
@@ -77,14 +80,13 @@ R: pallet_evm::Config + pallet_dapps_staking::Config,
     fn read_era_reward(
         input: &mut EvmDataReader,
         gasometer: &mut Gasometer,
-        _: &Context,
     ) -> EvmResult<PrecompileOutput> {
         input.expect_arguments(gasometer, 1)?;
         let era: u32 = input.read::<u32>(gasometer)?.into();
         let read_reward = pallet_dapps_staking::EraRewardsAndStakes::<R>::get(era);
         let reward = read_reward.map_or(Zero::zero(), |r| r.rewards);
         let reward = TryInto::<u128>::try_into(reward).unwrap_or(0);
-        let output = utils::argument_from_u128(reward);
+        let output = EvmDataWriter::new().write(reward).build();
 
         Ok(PrecompileOutput {
             exit_status: ExitSucceed::Returned,
@@ -92,90 +94,84 @@ R: pallet_evm::Config + pallet_dapps_staking::Config,
             output,
             logs: Default::default(),
         })
-        // input.expecting_arguments(1).map_err(|e| exit_error(e))?;
-        // let era = input.to_u256(1).low_u32();
-        // let read_reward = pallet_dapps_staking::EraRewardsAndStakes::<R>::get(era);
-        // let reward = read_reward.map_or(Zero::zero(), |r| r.rewards);
-        // let gas_used = R::GasWeightMapping::weight_to_gas(R::DbWeight::get().read);
-
-        // let reward = TryInto::<u128>::try_into(reward).unwrap_or(0);
-        // let output = utils::argument_from_u128(reward);
-
-        // Ok(PrecompileOutput {
-        //     exit_status: ExitSucceed::Returned,
-        //     cost: gas_used,
-        //     output,
-        //     logs: Default::default(),
-        // })
     }
-    // /// Fetch total staked amount from EraRewardsAndStakes storage map
-    // fn read_era_staked(input: EvmInArg) -> Result<PrecompileOutput, PrecompileFailure> {
-    //     input.expecting_arguments(1).map_err(|e| exit_error(e))?;
-    //     let era = input.to_u256(1).low_u32();
-    //     let reward_and_stake = pallet_dapps_staking::EraRewardsAndStakes::<R>::get(era);
-    //     let staked = reward_and_stake.map_or(Zero::zero(), |r| r.staked);
-    //     let gas_used = R::GasWeightMapping::weight_to_gas(R::DbWeight::get().read);
+    /// Fetch total staked amount from EraRewardsAndStakes storage map
+    fn read_era_staked(        
+        input: &mut EvmDataReader,
+        gasometer: &mut Gasometer,
+    ) -> EvmResult<PrecompileOutput> {
+        input.expect_arguments(gasometer, 1)?;
+        let era: u32 = input.read::<u32>(gasometer)?.into();
+        let reward_and_stake = pallet_dapps_staking::EraRewardsAndStakes::<R>::get(era);
+        let staked = reward_and_stake.map_or(Zero::zero(), |r| r.staked);
 
-    //     let staked = TryInto::<u128>::try_into(staked).unwrap_or(0);
-    //     let output = utils::argument_from_u128(staked);
+        let staked = TryInto::<u128>::try_into(staked).unwrap_or(0);
+        let output = EvmDataWriter::new().write(staked).build();
 
-    //     Ok(PrecompileOutput {
-    //         exit_status: ExitSucceed::Returned,
-    //         cost: gas_used,
-    //         output,
-    //         logs: Default::default(),
-    //     })
-    // }
+        Ok(PrecompileOutput {
+            exit_status: ExitSucceed::Returned,
+            cost: gasometer.used_gas(),
+            output,
+            logs: Default::default(),
+        })
+    }
 
-    // /// Fetch Ledger storage map
-    // fn read_staked_amount(input: EvmInArg) -> Result<PrecompileOutput, PrecompileFailure> {
-    //     input.expecting_arguments(1).map_err(|e| exit_error(e))?;
-    //     let staker_h160 = input.to_h160(1);
-    //     let staker = R::AddressMapping::into_account_id(staker_h160);
+    /// Fetch Ledger storage map
+    fn read_staked_amount( 
+        input: &mut EvmDataReader,
+        gasometer: &mut Gasometer,
+    ) -> EvmResult<PrecompileOutput> {
+        input.expect_arguments(gasometer, 1)?;
 
-    //     // call pallet-dapps-staking
-    //     let ledger = pallet_dapps_staking::Ledger::<R>::get(&staker);
-    //     let gas_used = R::GasWeightMapping::weight_to_gas(R::DbWeight::get().read);
+        let staker_h160 = input.read::<Address>(gasometer)?.0;
+        let staker = R::AddressMapping::into_account_id(staker_h160);
+        println!("read_staked_amount, staker={:?}", staker);
 
-    //     // compose output
-    //     let output =
-    //         argument_from_u128(TryInto::<u128>::try_into(ledger.locked).unwrap_or_default());
+        // call pallet-dapps-staking
+        let ledger = pallet_dapps_staking::Ledger::<R>::get(&staker);
+        println!("read_staked_amount, ledger.locked={:?}", ledger.locked);
 
-    //     Ok(PrecompileOutput {
-    //         exit_status: ExitSucceed::Returned,
-    //         cost: gas_used,
-    //         output,
-    //         logs: Default::default(),
-    //     })
-    // }
+        // compose output
+        let output = EvmDataWriter::new().write(ledger.locked).build();
 
-    // /// Read the amount staked on contract in the given era
-    // fn read_contract_stake(input: EvmInArg) -> Result<PrecompileOutput, PrecompileFailure> {
-    //     input.expecting_arguments(1).map_err(|e| exit_error(e))?;
+        Ok(PrecompileOutput {
+            exit_status: ExitSucceed::Returned,
+            cost: gasometer.used_gas(),
+            output,
+            logs: Default::default(),
+        })
+    }
 
-    //     // parse input parameters for pallet-dapps-staking call
-    //     let contract_h160 = input.to_h160(1);
-    //     let contract_id = Self::decode_smart_contract(contract_h160)?;
-    //     let current_era = pallet_dapps_staking::CurrentEra::<R>::get();
+    /// Read the amount staked on contract in the given era
+    fn read_contract_stake( 
+        input: &mut EvmDataReader,
+        gasometer: &mut Gasometer,
+    ) -> EvmResult<PrecompileOutput> {
+        input.expect_arguments(gasometer, 1)?;
 
-    //     // call pallet-dapps-staking
-    //     let staking_info =
-    //         pallet_dapps_staking::Pallet::<R>::staking_info(&contract_id, current_era);
-    //     let gas_used = R::GasWeightMapping::weight_to_gas(R::DbWeight::get().read);
-    //     // encode output with total
-    //     let total = TryInto::<u128>::try_into(staking_info.total).unwrap_or(0);
-    //     let output = utils::argument_from_u128(total);
+        // parse input parameters for pallet-dapps-staking call
+        let contract_h160 = input.read::<Address>(gasometer)?.0;
+        let contract_id = Self::decode_smart_contract(contract_h160)?;
+        let current_era = pallet_dapps_staking::CurrentEra::<R>::get();
 
-    //     Ok(PrecompileOutput {
-    //         exit_status: ExitSucceed::Returned,
-    //         cost: gas_used,
-    //         output,
-    //         logs: Default::default(),
-    //     })
-    // }
+        // call pallet-dapps-staking
+        let staking_info =
+            pallet_dapps_staking::Pallet::<R>::staking_info(&contract_id, current_era);
+        // encode output with total
+        let total = TryInto::<u128>::try_into(staking_info.total).unwrap_or(0);
+        let output = EvmDataWriter::new().write(total).build();
+
+        Ok(PrecompileOutput {
+            exit_status: ExitSucceed::Returned,
+            cost: gasometer.used_gas(),
+            output,
+            logs: Default::default(),
+        })
+    }
 
     /// Register contract with the dapp-staking pallet
-    fn register(input: &mut EvmDataReader,
+    fn register(
+        input: &mut EvmDataReader,
         gasometer: &mut Gasometer,
         context: &Context,
     ) -> EvmResult<(
@@ -187,7 +183,6 @@ R: pallet_evm::Config + pallet_dapps_staking::Config,
 
         // parse contract's address
         let contract_h160 = input.read::<Address>(gasometer)?.0;
-
         let contract_id = Self::decode_smart_contract(contract_h160)?;
 
         // Build call with origin.
@@ -198,19 +193,38 @@ R: pallet_evm::Config + pallet_dapps_staking::Config,
 		Ok((Some(origin).into(), call))
     }
 
-    // /// Lock up and stake balance of the origin account.
-    // fn bond_and_stake(input: EvmInArg) -> Result<R::Call, PrecompileFailure> {
-    //     input.expecting_arguments(2).map_err(|e| exit_error(e))?;
+    /// Lock up and stake balance of the origin account.
+    fn bond_and_stake(
+        input: &mut EvmDataReader,
+        gasometer: &mut Gasometer,
+        context: &Context,
+    ) -> EvmResult<(
+		<R::Call as Dispatchable>::Origin,
+		pallet_dapps_staking::Call<R>,
+	)> {
+        println!("bond_and_stake, input={:?}", input);
+        
+        input.expect_arguments(gasometer, 1)?;
+        println!("bond_and_stake, arguments OK");
+        gasometer.record_cost(RuntimeHelper::<R>::db_read_gas_cost())?;
+        println!("bond_and_stake, gasometer OK");
+        
+        // parse contract's address
+        let contract_h160 = input.read::<Address>(gasometer)?.0;
+        let contract_id = Self::decode_smart_contract(contract_h160)?;
+        println!("bond_and_stake, contract_id OK");
 
-    //     // parse contract's address
-    //     let contract_h160 = input.to_h160(1);
-    //     let contract_id = Self::decode_smart_contract(contract_h160)?;
+        // parse balance to be staked
+		let value: BalanceOf<R> = input.read(gasometer)?;
+        println!("bond_and_stake, value={:?}", value);
 
-    //     // parse balance to be staked
-    //     let value = input.to_u256(2).low_u128().saturated_into();
+        // Build call with origin.
+        let origin = R::AddressMapping::into_account_id(context.caller);
+        let call = pallet_dapps_staking::Call::<R>::bond_and_stake { contract_id, value }.into();
 
-    //     Ok(pallet_dapps_staking::Call::<R>::bond_and_stake { contract_id, value }.into())
-    // }
+        // Return call information
+        Ok((Some(origin).into(), call))
+    }
 
     // /// Start unbonding process and unstake balance from the contract.
     // fn unbond_and_unstake(input: EvmInArg) -> Result<R::Call, PrecompileFailure> {
@@ -271,8 +285,12 @@ pub enum Action {
     ReadCurrentEra = "read_current_era()",
     ReadUnbondingPeriod = "read_unbonding_period()",
     ReadEraReward = "read_era_reward(uint32)",
+    ReadEraStaked = "read_era_staked(uint32)",
+    ReadStakedAmount = "read_staked_amount(address)",
+    ReadContractStake = "read_contract_stake(address)",
 
     Register = "register(address)",
+    BondAndStake = "bond_and_stake(address,uint128)",
 }
 
 impl<R> Precompile for DappsStakingWrapper<R>
@@ -282,6 +300,7 @@ where
         + Dispatchable<PostInfo = PostDispatchInfo>
         + GetDispatchInfo,
     <R::Call as Dispatchable>::Origin: From<Option<R::AccountId>>,
+    BalanceOf<R>: EvmData,
 {
     fn execute(
         input: &[u8],
@@ -301,10 +320,13 @@ where
         let (origin, call) = match selector {
             Action::ReadCurrentEra => return Self::read_current_era(gasometer),
             Action::ReadUnbondingPeriod => return Self::read_unbonding_period(gasometer),
-            Action::ReadEraReward => return Self::read_era_reward(input, gasometer, context),
-            
+            Action::ReadEraReward => return Self::read_era_reward(input, gasometer),
+            Action::ReadEraStaked => return Self::read_era_staked(input, gasometer),
+            Action::ReadStakedAmount => return Self::read_staked_amount(input, gasometer),
+            Action::ReadContractStake => return Self::read_contract_stake(input, gasometer),
             // Dispatchables
-            Action::Register => Self::register(input, gasometer, context)?
+            Action::Register => Self::register(input, gasometer, context)?,
+            Action::BondAndStake => Self::bond_and_stake(input, gasometer, context)?,
         };
 
         // Dispatch call (if enough gas).
