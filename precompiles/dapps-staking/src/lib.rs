@@ -10,17 +10,17 @@ use frame_support::{
     traits::{Currency, Get},
 };
 use pallet_evm::{AddressMapping, Precompile};
-use sp_core::H160;
-use sp_runtime::traits::{Zero};
-use sp_std::{convert::TryInto, marker::PhantomData, vec::Vec};
-use precompile_utils::{ Address,
-    EvmData, EvmDataReader, EvmDataWriter, EvmResult, FunctionModifier, Gasometer,
+use precompile_utils::{
+    Address, EvmData, EvmDataReader, EvmDataWriter, EvmResult, FunctionModifier, Gasometer,
     RuntimeHelper,
 };
+use sp_core::H160;
+use sp_runtime::traits::Zero;
+use sp_std::{convert::TryInto, marker::PhantomData, vec::Vec};
 extern crate alloc;
 
 type BalanceOf<Runtime> = <<Runtime as pallet_dapps_staking::Config>::Currency as Currency<
-	<Runtime as frame_system::Config>::AccountId,
+    <Runtime as frame_system::Config>::AccountId,
 >>::Balance;
 
 mod utils;
@@ -41,7 +41,7 @@ pub struct DappsStakingWrapper<R>(PhantomData<R>);
 
 impl<R> DappsStakingWrapper<R>
 where
-R: pallet_evm::Config + pallet_dapps_staking::Config,
+    R: pallet_evm::Config + pallet_dapps_staking::Config,
     BalanceOf<R>: EvmData,
     <R::Call as Dispatchable>::Origin: From<Option<R::AccountId>>,
     R::Call: From<pallet_dapps_staking::Call<R>>,
@@ -96,7 +96,7 @@ R: pallet_evm::Config + pallet_dapps_staking::Config,
         })
     }
     /// Fetch total staked amount from EraRewardsAndStakes storage map
-    fn read_era_staked(        
+    fn read_era_staked(
         input: &mut EvmDataReader,
         gasometer: &mut Gasometer,
     ) -> EvmResult<PrecompileOutput> {
@@ -117,7 +117,7 @@ R: pallet_evm::Config + pallet_dapps_staking::Config,
     }
 
     /// Fetch Ledger storage map
-    fn read_staked_amount( 
+    fn read_staked_amount(
         input: &mut EvmDataReader,
         gasometer: &mut Gasometer,
     ) -> EvmResult<PrecompileOutput> {
@@ -143,7 +143,7 @@ R: pallet_evm::Config + pallet_dapps_staking::Config,
     }
 
     /// Read the amount staked on contract in the given era
-    fn read_contract_stake( 
+    fn read_contract_stake(
         input: &mut EvmDataReader,
         gasometer: &mut Gasometer,
     ) -> EvmResult<PrecompileOutput> {
@@ -175,9 +175,9 @@ R: pallet_evm::Config + pallet_dapps_staking::Config,
         gasometer: &mut Gasometer,
         context: &Context,
     ) -> EvmResult<(
-		<R::Call as Dispatchable>::Origin,
-		pallet_dapps_staking::Call<R>,
-	)> {
+        <R::Call as Dispatchable>::Origin,
+        pallet_dapps_staking::Call<R>,
+    )> {
         input.expect_arguments(gasometer, 1)?;
         gasometer.record_cost(RuntimeHelper::<R>::db_read_gas_cost())?;
 
@@ -189,8 +189,8 @@ R: pallet_evm::Config + pallet_dapps_staking::Config,
         let origin = R::AddressMapping::into_account_id(context.caller);
         let call = pallet_dapps_staking::Call::<R>::register { contract_id }.into();
 
-		// Return call information
-		Ok((Some(origin).into(), call))
+        // Return call information
+        Ok((Some(origin).into(), call))
     }
 
     /// Lock up and stake balance of the origin account.
@@ -199,23 +199,23 @@ R: pallet_evm::Config + pallet_dapps_staking::Config,
         gasometer: &mut Gasometer,
         context: &Context,
     ) -> EvmResult<(
-		<R::Call as Dispatchable>::Origin,
-		pallet_dapps_staking::Call<R>,
-	)> {
+        <R::Call as Dispatchable>::Origin,
+        pallet_dapps_staking::Call<R>,
+    )> {
         println!("bond_and_stake, input={:?}", input);
-        
+
         input.expect_arguments(gasometer, 1)?;
         println!("bond_and_stake, arguments OK");
         gasometer.record_cost(RuntimeHelper::<R>::db_read_gas_cost())?;
         println!("bond_and_stake, gasometer OK");
-        
+
         // parse contract's address
         let contract_h160 = input.read::<Address>(gasometer)?.0;
         let contract_id = Self::decode_smart_contract(contract_h160)?;
         println!("bond_and_stake, contract_id OK");
 
         // parse balance to be staked
-		let value: BalanceOf<R> = input.read(gasometer)?;
+        let value: BalanceOf<R> = input.read(gasometer)?;
         println!("bond_and_stake, value={:?}", value);
 
         // Build call with origin.
@@ -226,24 +226,51 @@ R: pallet_evm::Config + pallet_dapps_staking::Config,
         Ok((Some(origin).into(), call))
     }
 
-    // /// Start unbonding process and unstake balance from the contract.
-    // fn unbond_and_unstake(input: EvmInArg) -> Result<R::Call, PrecompileFailure> {
-    //     input.expecting_arguments(2).map_err(|e| exit_error(e))?;
+    /// Start unbonding process and unstake balance from the contract.
+    fn unbond_and_unstake(
+        input: &mut EvmDataReader,
+        gasometer: &mut Gasometer,
+        context: &Context,
+    ) -> EvmResult<(
+        <R::Call as Dispatchable>::Origin,
+        pallet_dapps_staking::Call<R>,
+    )> {
+        println!("unbond_and_unstake, input={:?}", input);
 
-    //     // parse contract's address
-    //     let contract_h160 = input.to_h160(1);
-    //     let contract_id = Self::decode_smart_contract(contract_h160)?;
+        input.expect_arguments(gasometer, 1)?;
 
-    //     // parse balance to be staked
-    //     let value = input.to_u256(2).low_u128().saturated_into();
+        // parse contract's address
+        let contract_h160 = input.read::<Address>(gasometer)?.0;
+        let contract_id = Self::decode_smart_contract(contract_h160)?;
 
-    //     Ok(pallet_dapps_staking::Call::<R>::unbond_and_unstake { contract_id, value }.into())
-    // }
+        // parse balance to be unstaked
+        let value: BalanceOf<R> = input.read(gasometer)?;
+        println!("unbond_and_unstake, value={:?}", value);
+        // Build call with origin.
+        let origin = R::AddressMapping::into_account_id(context.caller);
+        let call =
+            pallet_dapps_staking::Call::<R>::unbond_and_unstake { contract_id, value }.into();
 
-    // /// Start unbonding process and unstake balance from the contract.
-    // fn withdraw_unbonded() -> Result<R::Call, PrecompileFailure> {
-    //     Ok(pallet_dapps_staking::Call::<R>::withdraw_unbonded {}.into())
-    // }
+        // Return call information
+        Ok((Some(origin).into(), call))
+    }
+
+    /// Start unbonding process and unstake balance from the contract.
+    fn withdraw_unbonded(
+        context: &Context,
+    ) -> EvmResult<(
+        <R::Call as Dispatchable>::Origin,
+        pallet_dapps_staking::Call<R>,
+    )> {
+        println!("withdraw_unbonded enter ");
+        // Build call with origin.
+        let origin = R::AddressMapping::into_account_id(context.caller);
+        let call =
+            pallet_dapps_staking::Call::<R>::withdraw_unbonded {}.into();
+
+        // Return call information
+        Ok((Some(origin).into(), call))
+    }
 
     // /// Claim rewards for the contract in the dapp-staking pallet
     // fn claim(input: EvmInArg) -> Result<R::Call, PrecompileFailure> {
@@ -291,6 +318,8 @@ pub enum Action {
 
     Register = "register(address)",
     BondAndStake = "bond_and_stake(address,uint128)",
+    UnbondAndUnstake = "unbond_and_unstake(address,uint128)",
+    WithdrawUnbounded = "withdraw_unbonded()",
 }
 
 impl<R> Precompile for DappsStakingWrapper<R>
@@ -327,6 +356,9 @@ where
             // Dispatchables
             Action::Register => Self::register(input, gasometer, context)?,
             Action::BondAndStake => Self::bond_and_stake(input, gasometer, context)?,
+            Action::UnbondAndUnstake => Self::unbond_and_unstake(input, gasometer, context)?,
+            Action::WithdrawUnbounded => Self::withdraw_unbonded(context)?,
+
         };
 
         // Dispatch call (if enough gas).
