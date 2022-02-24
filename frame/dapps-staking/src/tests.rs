@@ -1674,3 +1674,49 @@ fn claim_two_contracts_three_stakers_new() {
         check_paidout_rewards_for_contract(&contract2, second_claim_era, expected_contract2_reward);
     })
 }
+
+#[test]
+fn maintenance_mode_is_ok() {
+    ExternalityBuilder::build().execute_with(|| {
+        initialize_first_block();
+
+        assert_ok!(DappsStaking::ensure_pallet_enabled());
+        assert!(!PalletDisabled::<TestRuntime>::exists());
+
+        assert_ok!(DappsStaking::maintenance_mode(Origin::root(), true));
+        assert!(PalletDisabled::<TestRuntime>::exists());
+
+        let account = 1;
+        let contract_id = MockSmartContract::Evm(H160::repeat_byte(0x01));
+
+        assert_noop!(
+            DappsStaking::register(Origin::signed(account), contract_id),
+            Error::<TestRuntime>::Disabled
+        );
+        assert_noop!(
+            DappsStaking::bond_and_stake(Origin::signed(account), contract_id, 100),
+            Error::<TestRuntime>::Disabled
+        );
+        assert_noop!(
+            DappsStaking::unbond_unstake_and_withdraw(Origin::signed(account), contract_id, 100),
+            Error::<TestRuntime>::Disabled
+        );
+        assert_noop!(
+            DappsStaking::claim(Origin::signed(account), contract_id, 5),
+            Error::<TestRuntime>::Disabled
+        );
+
+        assert_noop!(
+            DappsStaking::force_new_era(Origin::root()),
+            Error::<TestRuntime>::Disabled
+        );
+        assert_noop!(
+            DappsStaking::developer_pre_approval(Origin::root(), account),
+            Error::<TestRuntime>::Disabled
+        );
+        assert_noop!(
+            DappsStaking::enable_developer_pre_approval(Origin::root(), true),
+            Error::<TestRuntime>::Disabled
+        );
+    })
+}

@@ -669,14 +669,14 @@ pub mod pallet {
             Ok(().into())
         }
 
-        /// Enable or disable pallet
+        /// `true` will disable pallet, enabling maintenance mode. `false` will do the opposite.
         #[pallet::weight(T::DbWeight::get().writes(1))]
         pub fn maintenance_mode(origin: OriginFor<T>, enabled: bool) -> DispatchResultWithPostInfo {
             ensure_root(origin)?;
             if enabled {
-                PalletDisabled::<T>::kill();
-            } else {
                 PalletDisabled::<T>::put(());
+            } else {
+                PalletDisabled::<T>::kill();
             }
 
             Ok(().into())
@@ -685,7 +685,7 @@ pub mod pallet {
 
     impl<T: Config> Pallet<T> {
         /// `true` if pallet disabled for maintenance, `false` otherwise
-        fn ensure_pallet_enabled() -> Result<(), Error<T>> {
+        pub fn ensure_pallet_enabled() -> Result<(), Error<T>> {
             if PalletDisabled::<T>::exists() {
                 Err(Error::<T>::Disabled)
             } else {
