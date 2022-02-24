@@ -8,7 +8,7 @@ use frame_support::{
 };
 use pallet_dapps_staking::weights;
 use pallet_evm::{
-    AddressMapping, EnsureAddressNever, EnsureAddressRoot, ExitError, PrecompileResult,
+    AddressMapping, EnsureAddressNever, EnsureAddressRoot, PrecompileResult,
     PrecompileSet,
 };
 use serde::{Deserialize, Serialize};
@@ -394,11 +394,6 @@ pub fn default_context() -> fp_evm::Context {
         caller: Default::default(),
         apparent_value: U256::zero(),
     }
-}
-
-/// Returns an evm error with provided (static) text.
-pub fn exit_error<T: Into<alloc::borrow::Cow<'static, str>>>(text: T) -> ExitError {
-    ExitError::Other(text.into())
 }
 
 /// returns call struct to be used with evm calls

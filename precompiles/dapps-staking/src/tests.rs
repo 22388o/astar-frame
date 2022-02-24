@@ -1,10 +1,10 @@
 use crate::mock::{
-    advance_to_era, default_context, evm_call, exit_error, initialize_first_block,
+    advance_to_era, default_context, evm_call, initialize_first_block,
     precompile_address, Call, DappsStaking, EraIndex, ExternalityBuilder, Origin, TestAccount, AST,
     BLOCK_REWARD, UNBONDING_PERIOD, *,
 };
 use codec::Encode;
-use fp_evm::{ExitError, PrecompileFailure, PrecompileOutput};
+use fp_evm::{PrecompileOutput};
 use frame_support::{assert_ok, dispatch::Dispatchable};
 use pallet_evm::{ExitSucceed, PrecompileSet};
 use sha3::{Digest, Keccak256};
@@ -16,55 +16,6 @@ use codec::Decode;
 
 fn precompiles() -> DappPrecompile<TestRuntime> {
     PrecompilesValue::get()
-}
-
-#[test]
-fn selector_out_of_bounds_nok() {
-    ExternalityBuilder::default().build().execute_with(|| {
-        initialize_first_block();
-
-        // Use 3 bytes selector. 4 bytes are needed
-        let selector_nok = vec![0x01, 0x02, 0x03];
-
-        let expected = Some(Err(PrecompileFailure::Error {
-            exit_status: ExitError::Other("Selector too short".into()),
-        }));
-
-        assert_eq!(
-            precompiles().execute(
-                precompile_address(),
-                &selector_nok,
-                None,
-                &default_context(),
-                false,
-            ),
-            expected
-        );
-    });
-}
-#[test]
-fn selector_unknown_nok() {
-    ExternalityBuilder::default().build().execute_with(|| {
-        initialize_first_block();
-
-        // We use 3 bytes selector. 4 byts are needed
-        let selector_nok = vec![0x01, 0x02, 0x03, 0x04];
-
-        let expected = Some(Err(PrecompileFailure::Error {
-            exit_status: exit_error("No method at given selector"),
-        }));
-
-        assert_eq!(
-            precompiles().execute(
-                precompile_address(),
-                &selector_nok,
-                None,
-                &default_context(),
-                false,
-            ),
-            expected
-        );
-    });
 }
 
 #[test]
@@ -166,20 +117,6 @@ fn read_era_reward_is_ok() {
             logs: Default::default(),
         }));
 
-        // verify that argument check is done in read_era_reward()
-        // assert_eq!(
-        //     precompiles().execute(
-        //         precompile_address(),
-        //         &selector,
-        //         None,
-        //         &default_context(),
-        //         false
-        //     ),
-        //     Some(Err(PrecompileFailure::Error {
-        //         exit_status: exit_error("Reverted"),
-        //     }))
-        // );
-
         // execute and verify read_era_reward() query
         assert_eq!(
             precompiles().execute(
@@ -216,20 +153,6 @@ fn read_era_staked_is_ok() {
             logs: Default::default(),
         }));
 
-        // verify that argument check is done in read_era_staked()
-        assert_eq!(
-            precompiles().execute(
-                precompile_address(),
-                &selector,
-                None,
-                &default_context(),
-                false
-            ),
-            Some(Err(PrecompileFailure::Error {
-                exit_status: exit_error("Too few arguments"),
-            }))
-        );
-
         // execute and verify read_era_staked() query
         assert_eq!(
             precompiles().execute(
@@ -242,65 +165,6 @@ fn read_era_staked_is_ok() {
             expected
         );
     });
-}
-
-#[test]
-fn read_era_reward_too_many_arguments_nok() {
-    ExternalityBuilder::default().build().execute_with(|| {
-        initialize_first_block();
-
-        // build input for the call
-        let selector = &Keccak256::digest(b"read_era_reward(uint32)")[0..4];
-        let mut input_data = Vec::<u8>::from([0u8; 37]);
-        input_data[0..4].copy_from_slice(&selector);
-        let era = [0u8; 33];
-        input_data[4..37].copy_from_slice(&era);
-
-        assert_eq!(
-            precompiles().execute(
-                precompile_address(),
-                &input_data,
-                None,
-                &default_context(),
-                false
-            ),
-            Some(Err(PrecompileFailure::Error {
-                exit_status: exit_error("Too many arguments"),
-            }))
-        )
-    });
-}
-
-#[test]
-fn error_mapping_is_ok() {
-    ExternalityBuilder::default()
-        .with_balances(vec![(TestAccount::Alex.into(), 200 * AST)])
-        .build()
-        .execute_with(|| {
-            initialize_first_block();
-            let developer = TestAccount::Alex;
-            register_and_verify(developer.clone().into(), TEST_CONTRACT);
-
-            // attempt to register the same contract
-            let selector = &Keccak256::digest(b"register(address)")[0..4];
-            let mut input_data = Vec::<u8>::from([0u8; 36]);
-            input_data[0..4].copy_from_slice(&selector);
-            input_data[16..36].copy_from_slice(&TEST_CONTRACT);
-            let expected = Some(Err(PrecompileFailure::Error {
-                exit_status: exit_error("AlreadyRegisteredContract"),
-            }));
-
-            assert_eq!(
-                precompiles().execute(
-                    precompile_address(),
-                    &input_data,
-                    None,
-                    &default_context(),
-                    false
-                ),
-                expected
-            );
-        });
 }
 
 #[test]
@@ -502,20 +366,6 @@ fn read_staked_amount_verify(staker: TestAccount, amount: u128) {
         logs: Default::default(),
     }));
 
-    // verify that argument check is done in registered_contract
-    // assert_eq!(
-    //     precompiles().execute(
-    //         precompile_address(),
-    //         &selector,
-    //         None,
-    //         &default_context(),
-    //         false
-    //     ),
-    //     Some(Err(PrecompileFailure::Error {
-    //         exit_status: ExitError::Other("Too few arguments".into()),
-    //     }))
-    // );
-
     assert_eq!(
         precompiles().execute(
             precompile_address(),
@@ -622,20 +472,6 @@ fn contract_era_stake_verify(contract_array: [u8; 20], amount: u128) {
         cost: Default::default(),
         logs: Default::default(),
     }));
-
-    // verify that argument check is done in read_contract_stake
-    // assert_eq!(
-    //     precompiles().execute(
-    //         precompile_address(),
-    //         &selector,
-    //         None,
-    //         &default_context(),
-    //         false
-    //     ),
-    //     Some(Err(PrecompileFailure::Error {
-    //         exit_status: ExitError::Other("Too few arguments".into()),
-    //     }))
-    // );
 
     // execute and verify read_contract_stake() query
     assert_eq!(

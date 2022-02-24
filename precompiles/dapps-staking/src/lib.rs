@@ -265,26 +265,39 @@ where
         println!("withdraw_unbonded enter ");
         // Build call with origin.
         let origin = R::AddressMapping::into_account_id(context.caller);
-        let call =
-            pallet_dapps_staking::Call::<R>::withdraw_unbonded {}.into();
+        let call = pallet_dapps_staking::Call::<R>::withdraw_unbonded {}.into();
 
         // Return call information
         Ok((Some(origin).into(), call))
     }
 
-    // /// Claim rewards for the contract in the dapp-staking pallet
-    // fn claim(input: EvmInArg) -> Result<R::Call, PrecompileFailure> {
-    //     input.expecting_arguments(2).map_err(|e| exit_error(e))?;
+    /// Claim rewards for the contract in the dapp-staking pallet
+    fn claim(
+        input: &mut EvmDataReader,
+        gasometer: &mut Gasometer,
+        context: &Context,
+    ) -> EvmResult<(
+        <R::Call as Dispatchable>::Origin,
+        pallet_dapps_staking::Call<R>,
+    )> {
+        println!("claim, input={:?}", input);
 
-    //     // parse contract's address
-    //     let contract_h160 = input.to_h160(1);
-    //     let contract_id = Self::decode_smart_contract(contract_h160)?;
+        input.expect_arguments(gasometer, 1)?;
 
-    //     // parse era
-    //     let era = input.to_u256(2).low_u128().saturated_into();
+        // parse contract's address
+        let contract_h160 = input.read::<Address>(gasometer)?.0;
+        let contract_id = Self::decode_smart_contract(contract_h160)?;
 
-    //     Ok(pallet_dapps_staking::Call::<R>::claim { contract_id, era }.into())
-    // }
+        // parse era
+        let era: u32 = input.read::<u32>(gasometer)?.into();
+
+        // Build call with origin.
+        let origin = R::AddressMapping::into_account_id(context.caller);
+        let call = pallet_dapps_staking::Call::<R>::claim { contract_id, era }.into();
+
+        // Return call information
+        Ok((Some(origin).into(), call))
+    }
 
     /// Helper method to decode type SmartContract enum
     pub fn decode_smart_contract(
@@ -315,11 +328,11 @@ pub enum Action {
     ReadEraStaked = "read_era_staked(uint32)",
     ReadStakedAmount = "read_staked_amount(address)",
     ReadContractStake = "read_contract_stake(address)",
-
     Register = "register(address)",
     BondAndStake = "bond_and_stake(address,uint128)",
     UnbondAndUnstake = "unbond_and_unstake(address,uint128)",
     WithdrawUnbounded = "withdraw_unbonded()",
+    Claim = "claim(address,uint128)",
 }
 
 impl<R> Precompile for DappsStakingWrapper<R>
@@ -347,6 +360,7 @@ where
         gasometer.check_function_modifier(context, is_static, FunctionModifier::NonPayable)?;
 
         let (origin, call) = match selector {
+            // read storage
             Action::ReadCurrentEra => return Self::read_current_era(gasometer),
             Action::ReadUnbondingPeriod => return Self::read_unbonding_period(gasometer),
             Action::ReadEraReward => return Self::read_era_reward(input, gasometer),
@@ -358,7 +372,7 @@ where
             Action::BondAndStake => Self::bond_and_stake(input, gasometer, context)?,
             Action::UnbondAndUnstake => Self::unbond_and_unstake(input, gasometer, context)?,
             Action::WithdrawUnbounded => Self::withdraw_unbonded(context)?,
-
+            Action::Claim => Self::claim(input, gasometer, context)?,
         };
 
         // Dispatch call (if enough gas).
@@ -370,56 +384,5 @@ where
             output: vec![],
             logs: vec![],
         })
-        // let call = match selector {
-        //     // storage getters
-        //     [0xe6, 0x08, 0xd8, 0x0b] => return Self::read_current_era(),
-        //     [0xdb, 0x62, 0xb2, 0x01] => return Self::read_unbonding_period(),
-        //     [0xd9, 0x42, 0x4b, 0x16] => return Self::read_era_reward(input),
-        //     [0x18, 0x38, 0x66, 0x93] => return Self::read_era_staked(input),
-        //     [0x32, 0xbc, 0x5c, 0xa2] => return Self::read_staked_amount(input),
-        //     [0x53, 0x9d, 0x59, 0x57] => return Self::read_contract_stake(input),
-
-        //     // extrinsic calls
-        //     [0x44, 0x20, 0xe4, 0x86] => Self::register(input)?,
-        //     [0x52, 0xb7, 0x3e, 0x41] => Self::bond_and_stake(input)?,
-        //     [0xc7, 0x84, 0x1d, 0xd2] => Self::unbond_and_unstake(input)?,
-        //     [0x77, 0xa0, 0xfe, 0x02] => Self::withdraw_unbonded()?,
-        //     [0xc1, 0x3f, 0x4a, 0xf7] => Self::claim(input)?,
-        //     _ => {
-        //         return Err(PrecompileFailure::Error {
-        //             exit_status: ExitError::Other("No method at given selector".into()),
-        //         });
-        //     }
-        // };
-
-        // let info = call.get_dispatch_info();
-        // if let Some(gas_limit) = target_gas {
-        //     let required_gas = R::GasWeightMapping::weight_to_gas(info.weight);
-
-        //     if required_gas > gas_limit {
-        //         return Err(PrecompileFailure::Error {
-        //             exit_status: ExitError::OutOfGas,
-        //         });
-        //     }
-        // }
-
-        // let origin = R::AddressMapping::into_account_id(context.caller);
-        // let post_info = call.dispatch(Some(origin).into()).map_err(|e| {
-        //     let error_text = match e.error {
-        //         sp_runtime::DispatchError::Module { message, .. } => message,
-        //         _ => Some("No error Info"),
-        //     };
-        //     exit_error(error_text.unwrap_or_default())
-        // })?;
-
-        // let gas_used =
-        //     R::GasWeightMapping::weight_to_gas(post_info.actual_weight.unwrap_or(info.weight));
-
-        // Ok(PrecompileOutput {
-        //     exit_status: ExitSucceed::Returned,
-        //     cost: gas_used,
-        //     output: Default::default(),
-        //     logs: Default::default(),
-        // })
     }
 }
