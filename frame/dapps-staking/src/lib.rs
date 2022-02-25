@@ -353,17 +353,15 @@ impl<Balance: AtLeast32BitUnsigned + Copy> StakerInfo<Balance> {
     /// `unregistered_era_adjust(8)` results in `[<5, 1000>, <7, 1300>, <8, 0>]`
     ///
     fn unregistered_era_adjust(&mut self, unregistered_era: EraIndex) {
-        if self.stakes.is_empty() {
-            return;
-        }
-
-        if self.stakes[0].era >= unregistered_era {
-            // In this scenario, all eras prior to unregistered era have already been claimed
-            self.stakes.clear();
-        } else {
-            self.stakes.retain(|x| x.era < unregistered_era);
-            self.stakes
-                .push(EraStake::new(Zero::zero(), unregistered_era));
+        if let Some(era_stake) = self.stakes.first() {
+            if era_stake.era >= unregistered_era {
+                // In this scenario, all eras prior to unregistered era have already been claimed
+                self.stakes.clear();
+            } else {
+                self.stakes.retain(|x| x.era < unregistered_era);
+                self.stakes
+                    .push(EraStake::new(Zero::zero(), unregistered_era));
+            }
         }
     }
 }
