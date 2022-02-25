@@ -1,6 +1,6 @@
 [package]
 name = "pallet-precompile-dapps-staking"
-version = "1.1.0"
+version = "1.2.0"
 authors = ["Stake Technologies <devops@stake.co.jp>"]
 edition = "2018"
 license = "Apache-2.0"
@@ -20,6 +20,7 @@ pallet-dapps-staking = { git = "https://github.com/AstarNetwork/astar-frame", br
 precompile-utils = { path = "../utils", default-features = false }
 sp-runtime = { git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.16",  default-features = false }
 num_enum = { version = "0.5.3", default-features = false }
+log = "0.4"
 
 # Frontier
 pallet-evm = { git = "https://github.com/AstarNetwork/frontier", branch = "polkadot-v0.9.16", default-features = false }

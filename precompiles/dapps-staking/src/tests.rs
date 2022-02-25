@@ -3,14 +3,14 @@ use crate::mock::{
     DappsStaking, EraIndex, ExternalityBuilder, Origin, TestAccount, AST, BLOCK_REWARD,
     UNBONDING_PERIOD, *,
 };
-use codec::{Encode, Decode};
-use fp_evm::{PrecompileOutput, PrecompileFailure};
+use codec::{Decode, Encode};
+use fp_evm::{PrecompileFailure, PrecompileOutput};
 use frame_support::{assert_ok, dispatch::Dispatchable};
 use pallet_evm::{ExitSucceed, PrecompileSet};
 use sha3::{Digest, Keccak256};
 use sp_core::H160;
 use sp_runtime::Perbill;
-use std::{collections::BTreeMap, assert_matches::assert_matches};
+use std::{assert_matches::assert_matches, collections::BTreeMap};
 
 const ARG_SIZE_BYTES: usize = 32;
 
@@ -40,21 +40,21 @@ fn wrong_argument_count_reverts() {
 
 #[test]
 fn no_selector_exists_but_length_is_right() {
-	ExternalityBuilder::default().build().execute_with(|| {
-		let bad_selector = vec![1u8, 2u8, 3u8, 4u8];
+    ExternalityBuilder::default().build().execute_with(|| {
+        let bad_selector = vec![1u8, 2u8, 3u8, 4u8];
 
-		assert_matches!(
-			precompiles().execute(
-				precompile_address(),
-				&bad_selector,
-				None,
-				&default_context(),
-				false,
-			),
-			Some(Err(PrecompileFailure::Revert { output, ..}))
-			if &output == b"unknown selector"
-		);
-	});
+        assert_matches!(
+            precompiles().execute(
+                precompile_address(),
+                &bad_selector,
+                None,
+                &default_context(),
+                false,
+            ),
+            Some(Err(PrecompileFailure::Revert { output, ..}))
+            if &output == b"unknown selector"
+        );
+    });
 }
 
 #[test]

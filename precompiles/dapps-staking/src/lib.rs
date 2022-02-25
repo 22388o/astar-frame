@@ -17,7 +17,7 @@ use precompile_utils::{
 };
 use sp_core::H160;
 use sp_runtime::traits::Zero;
-use sp_std::{convert::TryInto, marker::PhantomData};
+use sp_std::{convert::TryInto, marker::PhantomData, vec};
 extern crate alloc;
 
 type BalanceOf<Runtime> = <<Runtime as pallet_dapps_staking::Config>::Currency as Currency<
