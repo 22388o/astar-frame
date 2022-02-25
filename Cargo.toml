@@ -3,8 +3,6 @@ members = [
     "frame/block-reward",
     "frame/custom-signatures",
     "frame/dapps-staking",
-]
-
-exclude = [
-    "vendor"
+    "precompiles/dapps-staking",
+    "precompiles/sr25519",
 ]
