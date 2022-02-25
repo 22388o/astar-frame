@@ -339,7 +339,10 @@ pub mod v3 {
     use super::*;
     use codec::{Decode, Encode};
     use frame_support::{
-        storage::generator::{StorageDoubleMap, StorageMap},
+        storage::{
+            child::KillStorageResult,
+            generator::{StorageDoubleMap, StorageMap},
+        },
         traits::Get,
         weights::Weight,
     };
@@ -349,7 +352,7 @@ pub mod v3 {
     #[cfg(feature = "try-runtime")]
     use frame_support::traits::OnRuntimeUpgradeHelpersExt;
     #[cfg(feature = "try-runtime")]
-    use sp_runtime::traits::Zero;
+    use sp_runtime::traits::{Saturating, Zero};
 
     #[derive(Clone, PartialEq, Encode, Decode, Default, RuntimeDebug, TypeInfo)]
     pub struct OldAccountLedger<Balance: AtLeast32BitUnsigned + Default + Copy> {
@@ -392,6 +395,8 @@ pub mod v3 {
         StakingInfo(Option<Vec<u8>>),
         /// In the middle of `RegisteredDapps` migration
         DAppInfo(Option<Vec<u8>>),
+        /// In the middle of `EraRewardAndStake` storage removal
+        EraRewardAndStake,
         Finished,
     }
 
@@ -488,14 +493,34 @@ pub mod v3 {
         let mut migration_state = MigrationStateV3::<T>::get();
         let mut consumed_weight = T::DbWeight::get().reads(2);
 
+        //
+        // 0
+        //
         if migration_state == MigrationState::NotStarted {
-            migration_state = MigrationState::AccountLedger(None);
+            // Since we want to continue accumulating block rewards, we need to translate
+            // the block reward accumulator immediately
+            let _ = BlockRewardAccumulator::<T>::translate(|x: Option<BalanceOf<T>>| {
+                if let Some(reward) = x {
+                    let dapps_reward = T::DeveloperRewardPercentage::get() * reward;
+                    let stakers_reward = reward.saturating_sub(dapps_reward);
+                    Some(RewardInfo::<BalanceOf<T>> {
+                        dapps: dapps_reward,
+                        stakers: stakers_reward,
+                    })
+                } else {
+                    None
+                }
+            });
+
             PalletDisabled::<T>::put(true);
-            consumed_weight = consumed_weight.saturating_add(T::DbWeight::get().writes(1));
+            consumed_weight = consumed_weight.saturating_add(T::DbWeight::get().writes(2));
+
+            migration_state = MigrationState::AccountLedger(None);
 
             // If normal run, just exit here to avoid the risk of clogging the upgrade block.
             if !cfg!(feature = "try-runtime") {
                 MigrationStateV3::<T>::put(migration_state);
+                consumed_weight = consumed_weight.saturating_add(T::DbWeight::get().writes(1));
                 return consumed_weight;
             }
         }
@@ -615,11 +640,6 @@ pub mod v3 {
             });
             consumed_weight = consumed_weight
                 .saturating_add(T::DbWeight::get().writes(1) + T::DbWeight::get().reads(3));
-
-            // This map should be cleared
-            // TODO: this is potentially heavy OP so maybe do it in steps!
-            // Each deletion counts as `write`
-            EraRewardsAndStakes::<T>::remove_all(None);
 
             log::info!(">>> GeneralEraInfo migration finished.");
 
@@ -784,6 +804,48 @@ pub mod v3 {
             }
 
             log::info!(">>> DAppInfo migration finished.");
+            migration_state = MigrationState::EraRewardAndStake;
+
+            MigrationStateV3::<T>::put(MigrationState::EraRewardAndStake);
+            consumed_weight = consumed_weight.saturating_add(T::DbWeight::get().writes(1));
+        }
+
+        //
+        // 6
+        //
+        if let MigrationState::EraRewardAndStake = migration_state {
+            let remaining_weight = weight_limit - consumed_weight;
+
+            // Just to be on the safe side, we reduce the number of ops.
+            let adjusted_weight = remaining_weight * 9 / 10;
+            let approximate_deletions_remaining = adjusted_weight / T::DbWeight::get().writes(1);
+            let approximate_deletions_remaining = approximate_deletions_remaining.max(1);
+
+            // Remove up to limited amount of entries from the DB
+            let result =
+                EraRewardsAndStakes::<T>::remove_all(Some(approximate_deletions_remaining as u32));
+
+            consumed_weight = consumed_weight
+                .saturating_add(approximate_deletions_remaining * T::DbWeight::get().writes(1));
+
+            if let KillStorageResult::AllRemoved(num) = result {
+                consumed_weight =
+                    consumed_weight.saturating_add(num as u64 * T::DbWeight::get().writes(1));
+            } else {
+                consumed_weight = consumed_weight
+                    .saturating_add(approximate_deletions_remaining * T::DbWeight::get().writes(1));
+                log::info!(
+                    ">>> EraRewardAndStake removal stopped after consuming {:?} weight.",
+                    consumed_weight
+                );
+                if cfg!(feature = "try-runtime") {
+                    return stateful_migrate::<T>(weight_limit);
+                } else {
+                    return consumed_weight;
+                }
+            };
+
+            log::info!(">>> EraRewardAndStke removal finished.");
         }
 
         MigrationStateV3::<T>::put(MigrationState::Finished);
