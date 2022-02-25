@@ -139,6 +139,8 @@ impl Default for Version {
     }
 }
 
+/// Used to represent how much was staked in a particular era.
+/// E.g. `{staked: 1000, era: 5}` means that in era `5`, staked amount was 1000.
 #[derive(Encode, Decode, Clone, Copy, PartialEq, Eq, RuntimeDebug, TypeInfo)]
 pub struct EraStake<Balance: AtLeast32BitUnsigned + Copy> {
     /// Staked amount in era
@@ -150,12 +152,39 @@ pub struct EraStake<Balance: AtLeast32BitUnsigned + Copy> {
 }
 
 impl<Balance: AtLeast32BitUnsigned + Copy> EraStake<Balance> {
+    /// Create a new instance of `EraStake` with given values
     fn new(staked: Balance, era: EraIndex) -> Self {
         Self { staked, era }
     }
 }
 
-/// Contains information about how much was staked in each era
+/// Used to provide a compact and bounded storage for informatio about stakes in unclaimed eras.
+///
+/// In order to avoid creating a separate storage entry for each `(staker, contract, era)` triplet,
+/// this struct is used to provide a more memory efficient solution.
+///
+/// Basic idea is to store `EraStake` structs into a vector from which a complete
+/// picture of **unclaimed eras** and stakes can be constructed.
+///
+/// # Example
+/// For simplicity, the following example will represent `EraStake` using `<era, stake>` notation.
+/// Let us assume we have the following vector in `StakerInfo` struct.
+///
+/// `[<5, 1000>, <6, 1500>, <8, 2100>, <9, 0>, <11, 500>]`
+///
+/// This tells us which eras are unclaimed and how much it was staked in each era.
+/// The interpretation is the following:
+/// 1. In era **5**, staked amount was **1000** (interpreted from `<5, 1000>`)
+/// 2. In era **6**, staker staked additional **500**, increasing total staked amount to **1500**
+/// 3. No entry for era **7** exists which means there were no changes from the former entry.
+///    This means that in era **7**, staked amount was also **1500**
+/// 4. In era **8**, staker staked an additional **600**, increasing total stake to **2100**
+/// 5. In era **9**, staker unstaked everything from the contract (interpreted from `<9, 0>`)
+/// 6. No changes were made in era **10** so we can interpret this same as the previous entry which means **0** staked amount.
+/// 7. In era **11**, staker staked **500** on the contract, making his stake active again after 2 eras of inactivity.
+///
+/// **NOTE:** It is important to understand that staker **DID NOT** claim any rewards during this period.
+///
 #[derive(Encode, Decode, Clone, Default, PartialEq, Eq, RuntimeDebug, TypeInfo)]
 pub struct StakerInfo<Balance: AtLeast32BitUnsigned + Copy> {
     // Size of this list would be limited by a configurable constant
@@ -163,7 +192,7 @@ pub struct StakerInfo<Balance: AtLeast32BitUnsigned + Copy> {
 }
 
 impl<Balance: AtLeast32BitUnsigned + Copy> StakerInfo<Balance> {
-    /// true if no stakes exist, false otherwise
+    /// `true` if no active stakes and unclaimed eras exist, `false` otherwise
     fn is_empty(&self) -> bool {
         self.stakes.is_empty()
     }
@@ -174,13 +203,20 @@ impl<Balance: AtLeast32BitUnsigned + Copy> StakerInfo<Balance> {
     }
 
     /// Stakes some value in the specified era.
+    ///
     /// User should ensure that given era is either equal or greater than the
     /// latest available era in the staking info.
+    ///
+    /// # Example
+    ///
+    /// The following example demonstrates how internal vector changes when `stake` is called:
+    ///
+    /// `stakes: [<5, 1000>, <7, 1300>]`
+    /// * `stake(7, 100)` will result in `[<5, 1000>, <7, 1400>]`
+    /// * `stake(9, 200)` will result in `[<5, 1000>, <7, 1400>, <9, 1600>]`
+    ///
     fn stake(&mut self, current_era: EraIndex, value: Balance) -> Result<(), &str> {
-        if self.stakes.is_empty() {
-            self.stakes.push(EraStake::new(value, current_era))
-        } else {
-            let era_stake = self.stakes.last().unwrap(); // exists if vec not empty
+        if let Some(era_stake) = self.stakes.last() {
             if era_stake.era > current_era {
                 return Err("Unexpected era".into());
             }
@@ -193,39 +229,77 @@ impl<Balance: AtLeast32BitUnsigned + Copy> StakerInfo<Balance> {
                 self.stakes
                     .push(EraStake::new(new_stake_value, current_era))
             }
+        } else {
+            self.stakes.push(EraStake::new(value, current_era));
         }
+
         Ok(())
     }
 
     /// Unstakes some value in the specified era.
+    ///
     /// User should ensure that given era is either equal or greater than the
     /// latest available era in the staking info.
+    ///
+    /// # Example 1
+    ///
+    /// `stakes: [<5, 1000>, <7, 1300>]`
+    /// * `unstake(7, 100)` will result in `[<5, 1000>, <7, 1200>]`
+    /// * `unstake(9, 400)` will result in `[<5, 1000>, <7, 1200>, <9, 800>]`
+    /// * `unstake(10, 800)` will result in `[<5, 1000>, <7, 1200>, <9, 800>, <0, 10>]`
+    ///
+    /// # Example 2
+    ///
+    /// `stakes: [<5, 1000>]`
+    /// * `unstake(1000, 0)` will result in `[]`
+    ///
+    /// Note that if no unclaimed eras remain, vector will be cleared.
+    ///
     fn unstake(&mut self, current_era: EraIndex, value: Balance) -> Result<(), &str> {
-        if self.stakes.is_empty() {
-            return Ok(());
+        if let Some(era_stake) = self.stakes.last() {
+            if era_stake.era > current_era {
+                return Err("Unexpected era".into());
+            }
+
+            let new_stake_value = era_stake.staked.saturating_sub(value);
+            if current_era == era_stake.era {
+                *self.stakes.last_mut().unwrap() = EraStake::new(new_stake_value, current_era)
+            } else {
+                self.stakes
+                    .push(EraStake::new(new_stake_value, current_era))
+            }
+
+            self.clean_unstaked();
         }
 
-        let era_stake = self.stakes.last().unwrap(); // not empty so it exists
-        if era_stake.era > current_era {
-            return Err("Unexpected era".into());
-        }
-
-        let new_stake_value = era_stake.staked.saturating_sub(value);
-
-        if current_era == era_stake.era {
-            *self.stakes.last_mut().unwrap() = EraStake::new(new_stake_value, current_era)
-        } else {
-            self.stakes
-                .push(EraStake::new(new_stake_value, current_era))
-        }
-
-        self.clean_unstaked();
         Ok(())
     }
 
     /// `Claims` the oldest era available for claiming.
-    /// In case valid era exists, returns (claim era, staked amount) tuple.
-    /// If no valid era exists, returns (0, 0) tuple.
+    /// In case valid era exists, returns `(claim era, staked amount)` tuple.
+    /// If no valid era exists, returns `(0, 0)` tuple.
+    ///
+    /// # Example
+    ///
+    /// The following example will demonstrate how the internal vec changes when `claim` is called consecutively.
+    ///
+    /// `stakes: [<5, 1000>, <7, 1300>, <8, 0>, <15, 3000>]`
+    ///
+    /// 1. `claim()` will return `(5, 1000)`
+    ///     Interal vector is modified to `[<6, 1000>, <7, 1300>, <8, 0>, <15, 3000>]`
+    ///
+    /// 2. `claim()` will return `(6, 1000)`.
+    ///    Internal vector is modified to `[<7, 1300>, <8, 0>, <15, 3000>]`
+    ///
+    /// 3. `claim()` will return `(7, 1300)`.
+    ///    Internal vector is modified to `[<15, 3000>]`
+    ///    Note that `0` staked period is discarded since nothing can be claimed there.
+    ///
+    /// 4. `claim()` will return `(15, 3000)`.
+    ///    Internal vector is modified to `[16, 3000]`
+    ///
+    /// Repeated calls would continue to modify vector following the same rule as in *4.*
+    ///
     fn claim(&mut self) -> (EraIndex, Balance) {
         if self.is_empty() {
             (0, Zero::zero())
@@ -263,8 +337,21 @@ impl<Balance: AtLeast32BitUnsigned + Copy> StakerInfo<Balance> {
     }
 
     /// Adjust era stakes information to the unregistered era.
+    ///
     /// All information that exists from `unregistered_era` onwards will be cleared.
     /// This should only be used after fetching the claim era and stake value.
+    ///
+    /// # Example 1
+    ///
+    /// `stakes: [<5, 1000>]`
+    ///
+    /// `unregistered_era_adjust(4)` results in empty vector `[]`
+    ///
+    /// # Example 2
+    ///
+    /// `stakes: [<5, 1000>, <7, 1300>, <9, 2000>]`
+    /// `unregistered_era_adjust(8)` results in `[<5, 1000>, <7, 1300>, <8, 0>]`
+    ///
     fn unregistered_era_adjust(&mut self, unregistered_era: EraIndex) {
         if self.stakes.is_empty() {
             return;

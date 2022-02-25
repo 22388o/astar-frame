@@ -175,6 +175,7 @@ pub mod pallet {
         StorageMap<_, Blake2_128Concat, T::SmartContract, DAppInfo<T::AccountId>>;
 
     /// Legacy, don't use.
+    /// TODO: remove in future upgrades
     #[pallet::storage]
     pub type EraRewardsAndStakes<T: Config> =
         StorageMap<_, Twox64Concat, EraIndex, migrations::v3::OldEraRewardAndStake<BalanceOf<T>>>;
