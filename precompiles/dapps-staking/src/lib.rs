@@ -200,6 +200,7 @@ where
         // parse contract's address
         let contract_h160 = input.read::<Address>(gasometer)?.0;
         let contract_id = Self::decode_smart_contract(gasometer, contract_h160)?;
+        log::trace!(target: "ds-precompile", "register {:?}", contract_id);
 
         // Build call with origin.
         let origin = R::AddressMapping::into_account_id(context.caller);
@@ -228,6 +229,8 @@ where
         // parse balance to be staked
         let value: BalanceOf<R> = input.read(gasometer)?;
 
+        log::trace!(target: "ds-precompile", "bond_and_stake {:?}, {:?}", contract_id, value);
+
         // Build call with origin.
         let origin = R::AddressMapping::into_account_id(context.caller);
         let call = pallet_dapps_staking::Call::<R>::bond_and_stake { contract_id, value }.into();
@@ -254,6 +257,7 @@ where
 
         // parse balance to be unstaked
         let value: BalanceOf<R> = input.read(gasometer)?;
+        log::trace!(target: "ds-precompile", "unbond_and_unstake {:?}, {:?}", contract_id, value);
 
         // Build call with origin.
         let origin = R::AddressMapping::into_account_id(context.caller);
@@ -300,6 +304,7 @@ where
 
         // parse era
         let era: u32 = input.read::<u32>(gasometer)?.into();
+        log::trace!(target: "ds-precompile", "claim {:?}, era {:?}", contract_id, era);
 
         // Build call with origin.
         let origin = R::AddressMapping::into_account_id(context.caller);
@@ -361,7 +366,7 @@ where
         context: &Context,
         is_static: bool,
     ) -> EvmResult<PrecompileOutput> {
-        // log::trace!(target: "ds-precompile", "In ds precompile");
+        log::trace!(target: "ds-precompile", "In ds precompile");
         let mut gasometer = Gasometer::new(target_gas);
         let gasometer = &mut gasometer;
 
