@@ -8,8 +8,7 @@ use frame_support::{
 };
 use pallet_dapps_staking::weights;
 use pallet_evm::{
-    AddressMapping, EnsureAddressNever, EnsureAddressRoot, PrecompileResult,
-    PrecompileSet,
+    AddressMapping, EnsureAddressNever, EnsureAddressRoot, PrecompileResult, PrecompileSet,
 };
 use serde::{Deserialize, Serialize};
 use sp_core::{H160, H256, U256};

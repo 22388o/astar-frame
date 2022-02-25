@@ -3,7 +3,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use codec::{Decode, Encode};
-use fp_evm::{Context, ExitSucceed, PrecompileFailure, PrecompileOutput};
+use fp_evm::{Context, ExitSucceed, PrecompileOutput};
 
 use frame_support::{
     dispatch::{Dispatchable, GetDispatchInfo, PostDispatchInfo},
@@ -16,19 +16,27 @@ use precompile_utils::{
 };
 use sp_core::H160;
 use sp_runtime::traits::Zero;
-use sp_std::{convert::TryInto, marker::PhantomData, vec::Vec};
+use sp_std::{convert::TryInto, marker::PhantomData};
 extern crate alloc;
 
 type BalanceOf<Runtime> = <<Runtime as pallet_dapps_staking::Config>::Currency as Currency<
     <Runtime as frame_system::Config>::AccountId,
 >>::Balance;
 
-mod utils;
-pub use utils::*;
 #[cfg(test)]
 mod mock;
 #[cfg(test)]
 mod tests;
+
+/// Smart contract enum. TODO move this to Astar primitives.
+/// This is only used to encode SmartContract enum
+#[derive(PartialEq, Eq, Copy, Clone, Encode, Decode, Debug)]
+pub enum Contract<A> {
+    /// EVM smart contract instance.
+    Evm(H160),
+    /// Wasm smart contract instance. Not used in this precompile
+    Wasm(A),
+}
 
 pub struct DappsStakingWrapper<R>(PhantomData<R>);
 
@@ -151,7 +159,7 @@ where
 
         // parse input parameters for pallet-dapps-staking call
         let contract_h160 = input.read::<Address>(gasometer)?.0;
-        let contract_id = Self::decode_smart_contract(contract_h160)?;
+        let contract_id = Self::decode_smart_contract(gasometer, contract_h160)?;
         let current_era = pallet_dapps_staking::CurrentEra::<R>::get();
 
         // call pallet-dapps-staking
@@ -183,7 +191,7 @@ where
 
         // parse contract's address
         let contract_h160 = input.read::<Address>(gasometer)?.0;
-        let contract_id = Self::decode_smart_contract(contract_h160)?;
+        let contract_id = Self::decode_smart_contract(gasometer, contract_h160)?;
 
         // Build call with origin.
         let origin = R::AddressMapping::into_account_id(context.caller);
@@ -211,7 +219,7 @@ where
 
         // parse contract's address
         let contract_h160 = input.read::<Address>(gasometer)?.0;
-        let contract_id = Self::decode_smart_contract(contract_h160)?;
+        let contract_id = Self::decode_smart_contract(gasometer, contract_h160)?;
         println!("bond_and_stake, contract_id OK");
 
         // parse balance to be staked
@@ -241,7 +249,7 @@ where
 
         // parse contract's address
         let contract_h160 = input.read::<Address>(gasometer)?.0;
-        let contract_id = Self::decode_smart_contract(contract_h160)?;
+        let contract_id = Self::decode_smart_contract(gasometer, contract_h160)?;
 
         // parse balance to be unstaked
         let value: BalanceOf<R> = input.read(gasometer)?;
@@ -286,7 +294,7 @@ where
 
         // parse contract's address
         let contract_h160 = input.read::<Address>(gasometer)?.0;
-        let contract_id = Self::decode_smart_contract(contract_h160)?;
+        let contract_id = Self::decode_smart_contract(gasometer, contract_h160)?;
 
         // parse era
         let era: u32 = input.read::<u32>(gasometer)?.into();
@@ -301,8 +309,9 @@ where
 
     /// Helper method to decode type SmartContract enum
     pub fn decode_smart_contract(
+        gasometer: &mut Gasometer,
         contract_h160: H160,
-    ) -> Result<<R as pallet_dapps_staking::Config>::SmartContract, PrecompileFailure> {
+    ) -> EvmResult<<R as pallet_dapps_staking::Config>::SmartContract> {
         // Encode contract address to fit SmartContract enum.
         // Since the SmartContract enum type can't be accessed from this pecompile,
         // use locally defined enum clone (see Contract enum)
@@ -313,7 +322,7 @@ where
         let smart_contract = <R as pallet_dapps_staking::Config>::SmartContract::decode(
             &mut &contract_enum_encoded[..21],
         )
-        .map_err(|_| exit_error("Error while decoding SmartContract"))?;
+        .map_err(|_| gasometer.revert("Error while decoding SmartContract"))?;
 
         Ok(smart_contract)
     }

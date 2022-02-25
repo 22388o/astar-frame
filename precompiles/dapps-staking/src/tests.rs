@@ -1,18 +1,20 @@
 use crate::mock::{
-    advance_to_era, default_context, evm_call, initialize_first_block,
-    precompile_address, Call, DappsStaking, EraIndex, ExternalityBuilder, Origin, TestAccount, AST,
-    BLOCK_REWARD, UNBONDING_PERIOD, *,
+    advance_to_era, default_context, evm_call, initialize_first_block, precompile_address, Call,
+    DappsStaking, EraIndex, ExternalityBuilder, Origin, TestAccount, AST, BLOCK_REWARD,
+    UNBONDING_PERIOD, *,
 };
 use codec::Encode;
-use fp_evm::{PrecompileOutput};
+use fp_evm::PrecompileOutput;
 use frame_support::{assert_ok, dispatch::Dispatchable};
 use pallet_evm::{ExitSucceed, PrecompileSet};
 use sha3::{Digest, Keccak256};
+use sp_core::H160;
 use sp_runtime::Perbill;
 use std::collections::BTreeMap;
 
-use crate::utils;
 use codec::Decode;
+
+const ARG_SIZE_BYTES: usize = 32;
 
 fn precompiles() -> DappPrecompile<TestRuntime> {
     PrecompilesValue::get()
@@ -109,7 +111,7 @@ fn read_era_reward_is_ok() {
 
         // build expected outcome
         let reward = BLOCK_REWARD;
-        let expected_output = utils::argument_from_u128(reward);
+        let expected_output = argument_from_u128(reward);
         let expected = Some(Ok(PrecompileOutput {
             exit_status: ExitSucceed::Returned,
             output: expected_output,
@@ -145,7 +147,7 @@ fn read_era_staked_is_ok() {
 
         // build expected outcome
         let staked = 0;
-        let expected_output = utils::argument_from_u128(staked);
+        let expected_output = argument_from_u128(staked);
         let expected = Some(Ok(PrecompileOutput {
             exit_status: ExitSucceed::Returned,
             output: expected_output,
@@ -355,13 +357,13 @@ fn read_staked_amount_verify(staker: TestAccount, amount: u128) {
     let mut input_data = Vec::<u8>::from([0u8; 36]);
     input_data[0..4].copy_from_slice(&selector);
 
-    let staker_arg = utils::argument_from_h160(staker.to_h160());
+    let staker_arg = argument_from_h160(staker.to_h160());
 
     input_data[4..36].copy_from_slice(&staker_arg);
 
     let expected = Some(Ok(PrecompileOutput {
         exit_status: ExitSucceed::Returned,
-        output: utils::argument_from_u128(amount),
+        output: argument_from_u128(amount),
         cost: Default::default(),
         logs: Default::default(),
     }));
@@ -465,7 +467,7 @@ fn contract_era_stake_verify(contract_array: [u8; 20], amount: u128) {
     input_data[16..36].copy_from_slice(&contract_array);
 
     // Compose expected outcome: add total stake on contract
-    let expected_output = utils::argument_from_u128(amount);
+    let expected_output = argument_from_u128(amount);
     let expected = Some(Ok(PrecompileOutput {
         exit_status: ExitSucceed::Returned,
         output: expected_output,
@@ -514,4 +516,19 @@ fn decode_smart_contract_from_array(
     .map_err(|_| "Error while decoding SmartContract")?;
 
     Ok(smart_contract)
+}
+
+/// Store u128 value in the 32 bytes vector as big endian
+pub fn argument_from_u128(value: u128) -> Vec<u8> {
+    let mut buffer = [0u8; ARG_SIZE_BYTES];
+    buffer[ARG_SIZE_BYTES - core::mem::size_of::<u128>()..].copy_from_slice(&value.to_be_bytes());
+    buffer.to_vec()
+}
+
+/// Store H160 value in the 32 bytes vector as big endian
+pub fn argument_from_h160(value: H160) -> Vec<u8> {
+    let mut buffer = [0u8; ARG_SIZE_BYTES];
+    buffer[ARG_SIZE_BYTES - core::mem::size_of::<H160>()..]
+        .copy_from_slice(&value.to_fixed_bytes());
+    buffer.to_vec()
 }
