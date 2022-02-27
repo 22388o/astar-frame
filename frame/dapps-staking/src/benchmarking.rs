@@ -232,7 +232,8 @@ benchmarks! {
 
     enable_compound_staking {
         initialize::<T>();
-        let staker = whitelisted_caller();
+
+        let staker: T::AccountId = whitelisted_caller();
         let option = RewardHandling::OnlyPayout;
     }: _(RawOrigin::Signed(staker.clone()), option)
     verify {
